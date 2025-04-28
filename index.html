@@ -1,1 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Basketball Showdown</title>
+  <link href="https://fonts.googleapis.com/css2?family=Comic+Neue:wght@700&display=swap" rel="stylesheet">
+  <style>
+    body {
+      margin: 0;
+      font-family: 'Comic Neue', cursive;
+      background: linear-gradient(to bottom, #87ceeb, #ffffff);
+      overflow: hidden;
+    }
+    canvas {
+      display: block;
+      margin: 0 auto;
+      background: #eee;
+      border: 4px solid #333;
+      width: 100vw;
+      height: 100vh;
+    }
+    #controls {
+      text-align: center;
+      margin-top: 10px;
+      font-size: 18px;
+      color: #333;
+    }
+    #restartButton {
+      margin-top: 10px;
+      padding: 10px 20px;
+      font-size: 16px;
+      font-family: 'Comic Neue', cursive;
+      background-color: #ff4500;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="gameCanvas"></canvas>
+  <div id="controls">
+    <p><strong>Controls:</strong> Left/Right arrows to move | Space to shoot</p>
+    <button id="restartButton">Restart Game</button>
+  </div>
+  <script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const restartButton = document.getElementById('restartButton');
 
+    let player, cpu, ball, keys, score, cpuScore, ballTimer, heldBy = null, winAnimationTimer = 0;
+    let hoopOffsetTop, hoopOffsetBottom, hoopDirectionTop, hoopDirectionBottom, hoopSpeedTop, hoopSpeedBottom;
+    let confetti = [];
+
+    const basketballImage = new Image();
+    basketballImage.src = 'https://upload.wikimedia.org/wikipedia/commons/7/7a/Basketball.png';
+
+    function resizeCanvas() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    }
+
+    resizeCanvas();
+    window.addEventListener('resize', resizeCanvas);
+
+    function initGame() {
+      player = { x: 370, y: canvas.height - 90, width: 70, height: 80, color: 'blue', dx: 5 };
+      cpu = { x: 370, y: 10, width: 70, height: 80, color: 'red', dx: 2, returningToDefense: false };
+      ball = { x: player.x + 25, y: player.y, radius: 30, dy: 0, dx: 0, inAir: false, isCpu: false, shooting: false };
+      keys = {};
+      score = 0;
+      cpuScore = 0;
+      ballTimer = 0;
+      heldBy = player;
+      winAnimationTimer = 0;
+      hoopOffsetTop = 0;
+      hoopOffsetBottom = 0;
+      hoopDirectionTop = 1;
+      hoopDirectionBottom = 1;
+      hoopSpeedTop = 2;
+      hoopSpeedBottom = 2;
+      confetti = [];
+    }
+
+    document.addEventListener('keydown', (e) => keys[e.key] = true);
+    document.addEventListener('keyup', (e) => keys[e.key] = false);
+    restartButton.addEventListener('click', () => initGame());
+
+    function drawWinAnimation() {
+      if (winAnimationTimer > 0) {
+        for (let i = 0; i < 10; i++) {
+          confetti.push({
+            x: ball.x,
+            y: ball.y,
+            dx: (Math.random() - 0.5) * 5,
+            dy: (Math.random() - 1) * 5,
+            color: `hsl(${Math.random() * 360}, 100%, 50%)`,
+            life: 60
+          });
+        }
+      }
+
+      confetti.forEach((p, index) => {
+        p.x += p.dx;
+        p.y += p.dy;
+        p.dy += 0.1;
+        p.life--;
+        ctx.fillStyle = p.color;
+        ctx.fillRect(p.x, p.y, 4, 4);
+        if (p.life <= 0) confetti.splice(index, 1);
+      });
+
+      winAnimationTimer = Math.max(0, winAnimationTimer - 1);
+    }
+
+    function shootBall(shooter) {
+      ball.inAir = true;
+      ball.isCpu = shooter === cpu;
+      ball.shooting = true;
+      ball.dy = shooter === player ? -7 : 7;
+      ball.dx = 0;
+      ball.x = shooter.x + shooter.width / 2;
+      ball.y = shooter.y + (shooter === player ? 0 : shooter.height);
+      heldBy = null;
+      ballTimer = 0;
+    }
+
+    function update() {
+      if (winAnimationTimer === 0) {
+        if (keys['ArrowLeft']) player.x -= player.dx;
+        if (keys['ArrowRight']) player.x += player.dx;
+        player.x = Math.max(0, Math.min(canvas.width - player.width, player.x));
+        if (keys[' '] && heldBy === player) shootBall(player);
+
+        if (heldBy === player) {
+          ball.x = player.x + player.width / 2;
+          ball.y = player.y;
+        } else if (heldBy === cpu) {
+          ball.x = cpu.x + cpu.width / 2;
+          ball.y = cpu.y + cpu.height;
+        }
+
+        if (!ball.inAir && heldBy === null) {
+          if (ball.x > player.x && ball.x < player.x + player.width && ball.y > player.y && ball.y < player.y + player.height) {
+            heldBy = player;
+          } else if (ball.x > cpu.x && ball.x < cpu.x + cpu.width && ball.y > cpu.y && ball.y < cpu.y + cpu.height) {
+            heldBy = cpu;
+          }
+        }
+
+        const hoopXBottom = canvas.width / 2 + hoopOffsetBottom;
+        const hoopXTop = canvas.width / 2 + hoopOffsetTop;
+
+        if (heldBy === cpu) {
+  if (!cpu.targetX) {
+    cpu.targetX = hoopXBottom; // Always aim at center of bottom hoop
+  }
+
+          const cpuCenter = cpu.x + cpu.width / 2;
+          const distanceToTarget = cpu.targetX - cpuCenter;
+
+          if (Math.abs(distanceToTarget) > 2) {
+            cpu.x += distanceToTarget > 0 ? cpu.dx : -cpu.dx;
+          } else {
+            cpu.x = cpu.targetX - cpu.width / 2;
+            shootBall(cpu);
+            cpu.targetX = null;
+          }
+        } else {
+          let targetCenterX = (heldBy === player || ball.inAir)
+            ? ball.x
+            : player.x + player.width / 2;
+
+          let cpuCenterX = cpu.x + cpu.width / 2;
+
+          if (Math.abs(cpuCenterX - targetCenterX) > 0) {
+            cpu.x += cpuCenterX < targetCenterX ? cpu.dx : -cpu.dx;
+          }
+        }
+
+        if (ball.inAir) {
+          ball.x += ball.dx;
+          ball.y += ball.dy;
+          if (++ballTimer > 600) {
+            ball.inAir = false;
+            heldBy = ball.isCpu ? player : cpu;
+            ballTimer = 0;
+          }
+
+          const hoopRange = 110 + ball.radius;
+
+          if (!ball.isCpu && ball.y - ball.radius < 50 && ball.x + ball.radius > hoopXTop - hoopRange && ball.x - ball.radius < hoopXTop + hoopRange && heldBy === null) {
+            score += 2;
+            ball.inAir = false;
+            heldBy = cpu;
+            winAnimationTimer = 60;
+          } else if (ball.isCpu && ball.y + ball.radius > canvas.height - 50 && ball.x + ball.radius > hoopXBottom - hoopRange && ball.x - ball.radius < hoopXBottom + hoopRange && heldBy === null) {
+            cpuScore += 2;
+            ball.inAir = false;
+            heldBy = player;
+            winAnimationTimer = 60;
+          } else {
+            const collidesWithPlayer = ball.x > player.x && ball.x < player.x + player.width && ball.y > player.y && ball.y < player.y + player.height;
+            const collidesWithCpu = ball.x > cpu.x && ball.x < cpu.x + cpu.width && ball.y > cpu.y && ball.y < cpu.y + cpu.height;
+
+            if (!collidesWithPlayer && !collidesWithCpu) {
+              if (ball.x <= 0 || ball.x >= canvas.width) ball.dx *= -1;
+              if (ball.y <= 0 || ball.y >= canvas.height) ball.dy *= -1;
+            } else {
+              ball.inAir = false;
+              heldBy = collidesWithPlayer ? player : cpu;
+            }
+          }
+        }
+
+        hoopOffsetTop += hoopDirectionTop * hoopSpeedTop;
+        if (Math.random() < 0.02) {
+          hoopSpeedTop = 1 + Math.random() * 3;
+          hoopDirectionTop *= Math.random() < 0.5 ? -1 : 1;
+        }
+        hoopOffsetTop = Math.max(-150, Math.min(150, hoopOffsetTop));
+
+        hoopOffsetBottom += hoopDirectionBottom * hoopSpeedBottom;
+        if (Math.random() < 0.02) {
+          hoopSpeedBottom = 1 + Math.random() * 3;
+          hoopDirectionBottom *= Math.random() < 0.5 ? -1 : 1;
+        }
+        hoopOffsetBottom = Math.max(-150, Math.min(150, hoopOffsetBottom));
+      }
+    }
+
+    function drawCourt() {
+      ctx.fillStyle = '#e3cba6';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      const courtMargin = canvas.width * 0.05;
+      const courtWidth = canvas.width - courtMargin * 2;
+      const courtHeight = canvas.height - courtMargin * 2;
+
+      ctx.strokeStyle = '#000';
+      ctx.lineWidth = 4;
+      ctx.strokeRect(courtMargin, courtMargin, courtWidth, courtHeight);
+
+      ctx.beginPath();
+      ctx.arc(canvas.width / 2, canvas.height / 2, Math.min(canvas.width, canvas.height) * 0.075, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.closePath();
+
+      const topHoopX = canvas.width / 2 + hoopOffsetTop;
+      const bottomHoopX = canvas.width / 2 + hoopOffsetBottom;
+      const hoopWidth = canvas.width * 0.275;
+
+      ctx.fillStyle = '#000';
+      ctx.fillRect(topHoopX - hoopWidth / 2, 0, hoopWidth, 10);
+      ctx.fillRect(bottomHoopX - hoopWidth / 2, canvas.height - 10, hoopWidth, 10);
+
+      ctx.fillStyle = '#FFA500';
+      ctx.fillRect(topHoopX - hoopWidth / 2, 30, hoopWidth, 10);
+      ctx.fillRect(bottomHoopX - hoopWidth / 2, canvas.height - 40, hoopWidth, 10);
+    }
+
+    function drawPlayer(p) {
+      ctx.fillStyle = p.color;
+      ctx.fillRect(p.x, p.y, p.width, p.height);
+    }
+
+    function drawBall() {
+      if (basketballImage.complete) {
+        ctx.drawImage(basketballImage, ball.x - ball.radius, ball.y - ball.radius, ball.radius * 2, ball.radius * 2);
+      } else {
+        ctx.beginPath();
+        ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI * 2);
+        ctx.fillStyle = ball.isCpu ? 'red' : 'orange';
+        ctx.fill();
+        ctx.closePath();
+      }
+    }
+
+    function drawScore() {
+      ctx.fillStyle = '#000';
+      ctx.font = '20px Comic Neue';
+      ctx.fillText("Player: " + score, 20, 30);
+      ctx.fillText("CPU: " + cpuScore, canvas.width - 120, 30);
+    }
+
+    function loop() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      drawCourt();
+      drawPlayer(player);
+      drawPlayer(cpu);
+      drawBall();
+      drawWinAnimation();
+      drawScore();
+      update();
+      requestAnimationFrame(loop);
+    }
+
+    initGame();
+    loop();
+  </script>
+</body>
+</html>
